@@ -19,6 +19,7 @@ import Pulp.Exec (execQuietWithStderr)
 import Pulp.System.FFI (AffN, EffN)
 import Pulp.System.Files (tempDir)
 import Pulp.Git (getVersionFromGitTag)
+import Pulp.Gitignore as Gitignore
 
 -- | Run a shell command, swallowing stderr.
 run :: String -> Array String -> AffN String
@@ -39,7 +40,8 @@ assertEq expected actual =
     assert' ("Expected " <> show expected <> ", got " <> show actual)
             (expected == actual)
 
-main = launchAff do
+git :: AffN Unit
+git = do
   dir <- tempDir { prefix: "pulp-unit-test-", suffix: "" }
   liftEff $ unsafeCoerceEff $ Process.chdir dir
   run_ "git" ["init"]
@@ -81,3 +83,29 @@ main = launchAff do
 
   result <- getVersionFromGitTag
   assertEq (Just (Tuple "v3.0.0" (version 3 0 0 Nil Nil))) result
+
+
+gitignore :: AffN Unit
+gitignore = do
+  let pattern = [".abc/*", "!.abc/d/"]
+      paths = [
+        ".abc/a.js",    -- filtered out
+        ".abc/d/e.js"   -- included
+      ]
+  -- check examples from npm assert module docs
+  assertEq
+    (Gitignore.create pattern # Gitignore.filter paths)
+    [".abc/d/e.js"]
+  assertEq
+    (Gitignore.create pattern # Gitignore.ignores ".abc/a.js")
+    true
+  assertEq
+    (Gitignore.create ["#abc"] # Gitignore.ignores "#abc")
+    false
+  assertEq
+    (Gitignore.create ["\\#abc"] # Gitignore.ignores "#abc")
+    true
+
+main = launchAff do
+  git
+  gitignore
